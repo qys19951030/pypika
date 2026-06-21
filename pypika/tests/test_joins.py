@@ -480,6 +480,89 @@ class JoinBehaviorTests(unittest.TestCase):
             str(q),
         )
 
+    def test_join_same_table_twice_without_alias(self):
+        table0 = Table("employees")
+        table1 = Table("employees")
+        table2 = Table("employees")
+        q = (
+            Query.from_(table0)
+            .join(table1)
+            .on(table0.id == table1.manager_id)
+            .join(table2)
+            .on(table1.id == table2.manager_id)
+            .select(table0.name, table1.name, table2.name)
+        )
+
+        self.assertEqual(
+            'SELECT "employees"."name","employees2"."name","employees3"."name" '
+            'FROM "employees" '
+            'JOIN "employees" "employees2" ON "employees"."id"="employees2"."manager_id" '
+            'JOIN "employees" "employees3" ON "employees2"."id"="employees3"."manager_id"',
+            str(q),
+        )
+
+        self.assertIsNone(table0.alias)
+        self.assertEqual(table1.alias, "employees2")
+        self.assertEqual(table2.alias, "employees3")
+
+    def test_join_same_table_three_times_without_alias(self):
+        tables = [Table("t") for _ in range(4)]
+        q = Query.from_(tables[0])
+        for i in range(1, 4):
+            q = q.join(tables[i]).on(tables[i - 1].id == tables[i].parent_id)
+        q = q.select(*[t.name for t in tables])
+
+        self.assertEqual(
+            'SELECT "t"."name","t2"."name","t3"."name","t4"."name" '
+            'FROM "t" '
+            'JOIN "t" "t2" ON "t"."id"="t2"."parent_id" '
+            'JOIN "t" "t3" ON "t2"."id"="t3"."parent_id" '
+            'JOIN "t" "t4" ON "t3"."id"="t4"."parent_id"',
+            str(q),
+        )
+
+        self.assertIsNone(tables[0].alias)
+        self.assertEqual(tables[1].alias, "t2")
+        self.assertEqual(tables[2].alias, "t3")
+        self.assertEqual(tables[3].alias, "t4")
+
+    def test_join_same_table_mixed_with_explicit_alias(self):
+        table0 = Table("employees")
+        table1 = Table("employees").as_("mgr")
+        table2 = Table("employees")
+        q = (
+            Query.from_(table0)
+            .join(table1)
+            .on(table0.manager_id == table1.id)
+            .join(table2)
+            .on(table1.manager_id == table2.id)
+            .select(table0.name, table1.name, table2.name)
+        )
+
+        self.assertEqual(
+            'SELECT "employees"."name","mgr"."name","employees3"."name" '
+            'FROM "employees" '
+            'JOIN "employees" "mgr" ON "employees"."manager_id"="mgr"."id" '
+            'JOIN "employees" "employees3" ON "mgr"."manager_id"="employees3"."id"',
+            str(q),
+        )
+
+        self.assertIsNone(table0.alias)
+        self.assertEqual(table1.alias, "mgr")
+        self.assertEqual(table2.alias, "employees3")
+
+    def test_join_same_table_with_different_schema_no_auto_alias(self):
+        from pypika import Schema
+
+        schema1 = Schema("schema1")
+        schema2 = Schema("schema2")
+        table1 = Table("employees", schema=schema1)
+        table2 = Table("employees", schema=schema2)
+        q = Query.from_(table1).join(table2).on(table1.id == table2.id).select(table1.name, table2.name)
+
+        self.assertIsNone(table1.alias)
+        self.assertIsNone(table2.alias)
+
     def test_select__fields_after_table_star(self):
         q = (
             Query.from_(self.table_abc)

@@ -1183,11 +1183,22 @@ class QueryBuilder(Selectable, Term):
         base_tables = self._from + [self._update_table] + self._with
         join.validate(base_tables, self._joins)
 
-        table_in_query = any(isinstance(clause, Table) and join.item in base_tables for clause in base_tables)
-        if isinstance(join.item, Table) and join.item.alias is None and table_in_query:
-            # On the odd chance that we join the same table as the FROM table and don't set an alias
-            # FIXME only works once
-            join.item.alias = join.item._table_name + "2"
+        if isinstance(join.item, Table) and join.item.alias is None:
+            all_tables = []
+            for t in base_tables:
+                if isinstance(t, Table):
+                    all_tables.append(t)
+            for j in self._joins:
+                if isinstance(j.item, Table):
+                    all_tables.append(j.item)
+
+            count = 0
+            for t in all_tables:
+                if t._table_name == join.item._table_name and t._schema == join.item._schema:
+                    count += 1
+
+            if count > 0:
+                join.item.alias = join.item._table_name + str(count + 1)
 
         self._joins.append(join)
 
