@@ -540,16 +540,100 @@ class JoinBehaviorTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            'SELECT "employees"."name","mgr"."name","employees3"."name" '
+            'SELECT "employees"."name","mgr"."name","employees2"."name" '
             'FROM "employees" '
             'JOIN "employees" "mgr" ON "employees"."manager_id"="mgr"."id" '
-            'JOIN "employees" "employees3" ON "mgr"."manager_id"="employees3"."id"',
+            'JOIN "employees" "employees2" ON "mgr"."manager_id"="employees2"."id"',
             str(q),
         )
 
         self.assertIsNone(table0.alias)
         self.assertEqual(table1.alias, "mgr")
+        self.assertEqual(table2.alias, "employees2")
+        self.assertTrue(table1._explicit_alias)
+        self.assertFalse(table2._explicit_alias)
+
+    def test_join_same_table_explicit_from_with_auto_joins(self):
+        table0 = Table("employees", alias="emp")
+        table1 = Table("employees")
+        table2 = Table("employees")
+        q = (
+            Query.from_(table0)
+            .join(table1)
+            .on(table0.manager_id == table1.id)
+            .join(table2)
+            .on(table1.manager_id == table2.id)
+            .select(table0.name, table1.name, table2.name)
+        )
+
+        self.assertEqual(
+            'SELECT "emp"."name","employees2"."name","employees3"."name" '
+            'FROM "employees" "emp" '
+            'JOIN "employees" "employees2" ON "emp"."manager_id"="employees2"."id" '
+            'JOIN "employees" "employees3" ON "employees2"."manager_id"="employees3"."id"',
+            str(q),
+        )
+
+        self.assertEqual(table0.alias, "emp")
+        self.assertEqual(table1.alias, "employees2")
         self.assertEqual(table2.alias, "employees3")
+        self.assertTrue(table0._explicit_alias)
+        self.assertFalse(table1._explicit_alias)
+        self.assertFalse(table2._explicit_alias)
+
+    def test_join_same_table_multiple_explicit_then_auto(self):
+        table0 = Table("employees")
+        table1 = Table("employees").as_("mgr")
+        table2 = Table("employees").as_("lead")
+        table3 = Table("employees")
+        q = (
+            Query.from_(table0)
+            .join(table1)
+            .on(table0.manager_id == table1.id)
+            .join(table2)
+            .on(table1.manager_id == table2.id)
+            .join(table3)
+            .on(table2.manager_id == table3.id)
+            .select(table0.name, table1.name, table2.name, table3.name)
+        )
+
+        self.assertEqual(
+            'SELECT "employees"."name","mgr"."name","lead"."name","employees2"."name" '
+            'FROM "employees" '
+            'JOIN "employees" "mgr" ON "employees"."manager_id"="mgr"."id" '
+            'JOIN "employees" "lead" ON "mgr"."manager_id"="lead"."id" '
+            'JOIN "employees" "employees2" ON "lead"."manager_id"="employees2"."id"',
+            str(q),
+        )
+
+        self.assertIsNone(table0.alias)
+        self.assertEqual(table1.alias, "mgr")
+        self.assertEqual(table2.alias, "lead")
+        self.assertEqual(table3.alias, "employees2")
+        self.assertTrue(table1._explicit_alias)
+        self.assertTrue(table2._explicit_alias)
+        self.assertFalse(table3._explicit_alias)
+
+    def test_join_same_table_explicit_constructor_alias(self):
+        table0 = Table("employees", alias="base")
+        table1 = Table("employees")
+        q = (
+            Query.from_(table0)
+            .join(table1)
+            .on(table0.manager_id == table1.id)
+            .select(table0.name, table1.name)
+        )
+
+        self.assertEqual(
+            'SELECT "base"."name","employees2"."name" '
+            'FROM "employees" "base" '
+            'JOIN "employees" "employees2" ON "base"."manager_id"="employees2"."id"',
+            str(q),
+        )
+
+        self.assertEqual(table0.alias, "base")
+        self.assertEqual(table1.alias, "employees2")
+        self.assertTrue(table0._explicit_alias)
 
     def test_join_same_table_with_different_schema_no_auto_alias(self):
         from pypika import Schema

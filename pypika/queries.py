@@ -150,11 +150,17 @@ class Table(Selectable):
         self._query_cls = query_cls or Query
         self._for = None
         self._for_portion = None
+        self._explicit_alias = alias is not None
         if not issubclass(self._query_cls, Query):
             raise TypeError("Expected 'query_cls' to be subclass of Query")
 
     def get_table_name(self) -> str:
         return self.alias or self._table_name
+
+    @builder
+    def as_(self, alias: str) -> None:
+        self.alias = alias
+        self._explicit_alias = True
 
     def get_sql(self, **kwargs: Any) -> str:
         quote_char = kwargs.get("quote_char")
@@ -1184,21 +1190,29 @@ class QueryBuilder(Selectable, Term):
         join.validate(base_tables, self._joins)
 
         if isinstance(join.item, Table) and join.item.alias is None:
-            all_tables = []
+            total_existing = 0
+            auto_count = 0
+
             for t in base_tables:
-                if isinstance(t, Table):
-                    all_tables.append(t)
+                if (
+                    isinstance(t, Table)
+                    and t._table_name == join.item._table_name
+                    and t._schema == join.item._schema
+                ):
+                    total_existing += 1
+
             for j in self._joins:
-                if isinstance(j.item, Table):
-                    all_tables.append(j.item)
+                if (
+                    isinstance(j.item, Table)
+                    and j.item._table_name == join.item._table_name
+                    and j.item._schema == join.item._schema
+                ):
+                    total_existing += 1
+                    if not getattr(j.item, "_explicit_alias", False):
+                        auto_count += 1
 
-            count = 0
-            for t in all_tables:
-                if t._table_name == join.item._table_name and t._schema == join.item._schema:
-                    count += 1
-
-            if count > 0:
-                join.item.alias = join.item._table_name + str(count + 1)
+            if total_existing > 0:
+                join.item.alias = join.item._table_name + str(auto_count + 2)
 
         self._joins.append(join)
 
